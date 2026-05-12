@@ -46,10 +46,73 @@ def run_pipeline(ticker: str, resume: bool = True) -> str:
 
     _write_cache(ticker, raw_data_compatible)
 
+    # Task 1.5 · 机构级财务建模 (Dims 20-22) · 补回 v3.0 pipeline 遗漏的 legacy stage1 step.
+    # 缺这步 institutional_modeling (DCF/LBO/IC memo/target_price/BCG) 全是 None.
+    _attach_institutional_modeling(ticker, raw_data_compatible)
+
     # pipeline.score_from_cache · 直接调 rrt.score_dimensions/generate_panel/generate_synthesis
     # 不再走 rrt.stage1（stage1 会重新 collect · 浪费时间）
     score_from_cache(ticker)
     return synthesize_and_render(ticker)
+
+
+def _attach_institutional_modeling(ticker: str, raw: dict) -> None:
+    """补跑 legacy stage1 Task 1.5 (Dims 20-22) · 填 raw["dimensions"] + 重写 cache.
+
+    包含：
+      - 20_valuation_models: DCF + LBO + Comps
+      - 21_research_workflow: 首次覆盖评级 + 目标价 + upside
+      - 22_deep_methods: IC memo + BCG position + 行业吸引力
+
+    pipeline 路径默认不跑这一步 · 导致 synthesis.institutional_modeling 字段全 None.
+    本函数完全照搬 run_real_test.stage1 第 574-583 行的代码.
+    """
+    from compute_deep_methods import compute_dim_20, compute_dim_21, compute_dim_22
+    from lib.stock_features import extract_features
+
+    dims = raw.setdefault("dimensions", {})
+    features_pre = extract_features(raw, dims)
+    _normalize_yi_units(features_pre)
+    dims["20_valuation_models"] = compute_dim_20(features_pre, raw)
+    d20 = dims["20_valuation_models"]["data"]
+    dims["21_research_workflow"] = compute_dim_21(features_pre, raw, d20)
+    d21 = dims["21_research_workflow"]["data"]
+    dims["22_deep_methods"] = compute_dim_22(features_pre, raw, d20, d21)
+
+    s20 = d20.get("summary", {})
+    s21 = d21.get("summary", {})
+    s22 = dims["22_deep_methods"]["data"].get("summary", {})
+    print(f"🏛  [pipeline.run] Task 1.5 机构级建模")
+    print(f"   DCF: ¥{s20.get('dcf_intrinsic')} · 安全边际 {s20.get('dcf_safety_margin_pct')}% · {s20.get('dcf_verdict')}")
+    print(f"   LBO: IRR {s20.get('lbo_irr_pct')}% · {s20.get('lbo_verdict')}")
+    print(f"   首次覆盖: {s21.get('rec_rating')} · TP ¥{s21.get('target_price')} ({s21.get('upside_pct')}%)")
+    print(f"   IC Memo: {s22.get('ic_recommendation')}")
+
+    _write_cache(ticker, raw)  # 重写含 d20/21/22 的 raw_data.json
+
+
+def _normalize_yi_units(features: dict) -> None:
+    """修 features 里 `_yi` 后缀字段单位错的兜底.
+
+    extract_features 假设 raw 的 market_cap 是 "X亿" 字符串，实际上 v3.0
+    fetcher 返回的是元数值 (e.g., 33,439,595,383)。replace("亿","") 不起作用，
+    market_cap_yi 字面值就是元 · 然后 shares_outstanding_yi = mcap/price
+    也跟着错（应是亿股，实际是股）· 导致 compute_dcf 内 intrinsic_per_share
+    被压成 0.
+
+    A 股最大市值约 4 万亿元 ≈ 4e4 亿，所以 >1e6 必然是元单位.
+    """
+    mc = features.get("market_cap_yi") or 0
+    if mc > 1e6:  # 元单位 → 转亿
+        features["market_cap_yi"] = round(mc / 1e8, 3)
+    cc = features.get("circulating_cap_yi") or 0
+    if cc > 1e6:
+        features["circulating_cap_yi"] = round(cc / 1e8, 3)
+    # shares_outstanding_yi 由 extract_features 用错单位的 market_cap_yi 派生
+    # · 修完 market_cap_yi 后必须重算
+    px = features.get("price") or 0
+    if px > 0 and features["market_cap_yi"] > 0:
+        features["shares_outstanding_yi"] = round(features["market_cap_yi"] / px, 3)
 
 
 def _preflight_guards(ticker: str) -> None:
