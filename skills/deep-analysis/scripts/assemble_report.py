@@ -574,8 +574,8 @@ def assemble(ticker: str) -> Path:
         _render_style_chip(syn),
     )
 
-    date = datetime.now().strftime("%Y%m%d")
-    out_dir = Path("reports") / f"{ticker}_{date}"
+    from lib.report_paths import build_report_dir
+    out_dir = build_report_dir(ticker)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "full-report.html"
     out_file.write_text(template, encoding="utf-8")

@@ -15,14 +15,8 @@ from pathlib import Path
 
 
 def main(ticker: str) -> Path:
-    date = datetime.now().strftime("%Y%m%d")
-    report_dir = Path("reports") / f"{ticker}_{date}"
-    if not report_dir.exists():
-        # try any matching dir
-        candidates = list(Path("reports").glob(f"{ticker}_*"))
-        if not candidates:
-            raise FileNotFoundError(f"No report dir for {ticker}")
-        report_dir = sorted(candidates)[-1]
+    from lib.report_paths import find_report_dir
+    report_dir = find_report_dir(ticker)
 
     html_path = report_dir / "full-report.html"
     if not html_path.exists():

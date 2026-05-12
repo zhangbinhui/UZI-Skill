@@ -17,8 +17,8 @@ except ImportError:
 
 
 def render(ticker: str, selector: str = "#share-card", out_name: str = "share-card.png", scale: int = 2) -> Path:
-    date = datetime.now().strftime("%Y%m%d")
-    report_dir = Path("reports") / f"{ticker}_{date}"
+    from lib.report_paths import find_report_dir
+    report_dir = find_report_dir(ticker)
     html_path = report_dir / "full-report.html"
     if not html_path.exists():
         raise FileNotFoundError(f"{html_path} not found. Run assemble_report.py first.")

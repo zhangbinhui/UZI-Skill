@@ -499,24 +499,14 @@ def main():
             sys.exit(0)
 
     # 找到生成的报告
-    from datetime import datetime
     from lib.market_router import parse_ticker
+    from lib.report_paths import find_report_dir
     ti = parse_ticker(args.ticker)
-    date = datetime.now().strftime("%Y%m%d")
-    report_dir = SCRIPTS_DIR / "reports" / f"{ti.full}_{date}"
+    try:
+        report_dir = SCRIPTS_DIR / find_report_dir(ti.full)
+    except FileNotFoundError:
+        report_dir = SCRIPTS_DIR / "reports" / ti.full  # 让下方文件检查 print 出错
     standalone = report_dir / "full-report-standalone.html"
-
-    if not standalone.exists():
-        # 尝试找最新的报告
-        reports_root = SCRIPTS_DIR / "reports"
-        if reports_root.exists():
-            dirs = sorted(reports_root.glob(f"{ti.full}_*"), reverse=True)
-            for d in dirs:
-                candidate = d / "full-report-standalone.html"
-                if candidate.exists():
-                    standalone = candidate
-                    report_dir = d
-                    break
 
     if not standalone.exists():
         print(f"\n❌ 报告文件未找到: {standalone}")
