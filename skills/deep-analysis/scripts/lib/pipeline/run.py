@@ -45,7 +45,6 @@ def run_pipeline(ticker: str, resume: bool = True) -> str:
             raw_data_compatible[k] = raw_dict[k]
 
     _write_cache(ticker, raw_data_compatible)
-    print(f"✅ [pipeline.run] raw_data.json 已写 · 进入 scoring 段（v3.0 纯函数编排）")
 
     # pipeline.score_from_cache · 直接调 rrt.score_dimensions/generate_panel/generate_synthesis
     # 不再走 rrt.stage1（stage1 会重新 collect · 浪费时间）
@@ -96,14 +95,19 @@ def _load_cache(ticker: str) -> dict:
 
 
 def _write_cache(ticker: str, raw: dict) -> None:
-    """写 raw_data.json · 让 legacy stage1 的 resume 能复用."""
+    """写 raw_data.json · 让 legacy stage1 的 resume 能复用.
+
+    `default=str` 兜底 fetcher 偶尔返回的 datetime.date / datetime / Decimal 等
+    非 JSON 原生类型 · 防止 score_from_cache 后续读不到 raw_data.json.
+    """
     from lib.market_router import parse_ticker
     ti = parse_ticker(ticker)
     import run_real_test as rrt
     cache_dir = Path(rrt.__file__).parent / ".cache" / ti.full
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / "raw_data.json"
-    try:
-        cache_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as e:
-        print(f"   ⚠️ 写 cache 失败: {e}")
+    cache_path.write_text(
+        json.dumps(raw, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    print(f"✅ [pipeline.run] raw_data.json 已写 · 进入 scoring 段（v3.0 纯函数编排）")
